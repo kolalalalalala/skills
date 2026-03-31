@@ -15,7 +15,7 @@ permissions:
 jobs:
 
   # -----------------------------------------------
-  # 1. CodeQL
+  # 1. CodeQL - fixed: explicit languages instead of auto
   # -----------------------------------------------
   codeql:
     name: CodeQL Scan
@@ -25,7 +25,7 @@ jobs:
 
       - uses: github/codeql-action/init@v4
         with:
-          languages: auto
+          languages: javascript, python
 
       - uses: github/codeql-action/autobuild@v4
 
@@ -83,8 +83,11 @@ jobs:
           chmod +x osv-scanner
 
       - name: Run OSV Scanner
-        run: ./osv-scanner scan source --recursive --format=sarif --output=osv-results.sarif ./
-        continue-on-error: true
+        run: ./osv-scanner scan source --recursive --format=sarif --output=osv-results.sarif ./ || true
+
+      - name: Ensure OSV sarif exists
+        run: touch osv-results.sarif
+        if: always()
 
       - name: Upload to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -100,7 +103,7 @@ jobs:
         if: always()
 
   # -----------------------------------------------
-  # 4. Snyk
+  # 4. Snyk - dependencies AND source code
   # -----------------------------------------------
   snyk:
     name: Snyk Scan
@@ -110,21 +113,39 @@ jobs:
 
       - uses: snyk/actions/setup@master
 
-      - name: Run Snyk against all projects
-        run: snyk test --all-projects --sarif-file-output=snyk.sarif
-        continue-on-error: true
+      - name: Snyk - scan dependencies
+        run: snyk test --all-projects --sarif-file-output=snyk-deps.sarif || true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Upload Snyk results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: snyk.sarif
+      - name: Snyk - scan source code
+        run: snyk code test --sarif-file-output=snyk-code.sarif || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Ensure sarif files exist
+        run: |
+          touch snyk-deps.sarif
+          touch snyk-code.sarif
         if: always()
 
-      - name: Upload Snyk results as artifact
+      - name: Upload Snyk deps results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: snyk-deps.sarif
+        if: always()
+
+      - name: Upload Snyk code results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: snyk-code.sarif
+        if: always()
+
+      - name: Upload Snyk results as artifacts
         uses: actions/upload-artifact@v4
         with:
           name: snyk-results
-          path: snyk.sarif
+          path: |
+            snyk-deps.sarif
+            snyk-code.sarif
         if: always()
