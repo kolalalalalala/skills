@@ -15,29 +15,34 @@ permissions:
 jobs:
 
   # -----------------------------------------------
-  # 1. CodeQL - fixed: explicit languages instead of auto
+  # 1. CodeQL - uses matrix to handle any language
   # -----------------------------------------------
   codeql:
-    name: CodeQL Scan
+    name: CodeQL Scan (${{ matrix.language }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript, python]
     steps:
       - uses: actions/checkout@v4
 
       - uses: github/codeql-action/init@v4
         with:
-          languages: javascript, python
+          languages: ${{ matrix.language }}
 
       - uses: github/codeql-action/autobuild@v4
 
       - uses: github/codeql-action/analyze@v4
         with:
-          output: codeql-results
+          category: /language:${{ matrix.language }}
+          output: codeql-results-${{ matrix.language }}
 
       - name: Upload CodeQL results as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: codeql-results
-          path: codeql-results
+          name: codeql-results-${{ matrix.language }}
+          path: codeql-results-${{ matrix.language }}
         if: always()
 
   # -----------------------------------------------
@@ -85,8 +90,11 @@ jobs:
       - name: Run OSV Scanner
         run: ./osv-scanner scan source --recursive --format=sarif --output=osv-results.sarif ./ || true
 
-      - name: Ensure OSV sarif exists
-        run: touch osv-results.sarif
+      - name: Ensure valid OSV sarif exists
+        run: |
+          if [ ! -s osv-results.sarif ]; then
+            echo '{"version":"2.1.0","runs":[]}' > osv-results.sarif
+          fi
         if: always()
 
       - name: Upload to GitHub Security tab
@@ -123,22 +131,28 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Ensure sarif files exist
+      - name: Ensure valid sarif files exist
         run: |
-          touch snyk-deps.sarif
-          touch snyk-code.sarif
+          if [ ! -s snyk-deps.sarif ]; then
+            echo '{"version":"2.1.0","runs":[]}' > snyk-deps.sarif
+          fi
+          if [ ! -s snyk-code.sarif ]; then
+            echo '{"version":"2.1.0","runs":[]}' > snyk-code.sarif
+          fi
         if: always()
 
       - name: Upload Snyk deps results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-deps.sarif
+          category: snyk-deps
         if: always()
 
       - name: Upload Snyk code results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-code.sarif
+          category: snyk-code
         if: always()
 
       - name: Upload Snyk results as artifacts
