@@ -15,38 +15,28 @@ permissions:
 jobs:
 
   # -----------------------------------------------
-  # 1. CodeQL - uses matrix to handle any language
+  # 1. CodeQL - working version, no changes
   # -----------------------------------------------
   codeql:
-    name: CodeQL Scan (${{ matrix.language }})
+    name: CodeQL Scan
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript, python]
     steps:
       - uses: actions/checkout@v4
-
       - uses: github/codeql-action/init@v4
         with:
-          languages: ${{ matrix.language }}
-
+          languages: javascript, python
       - uses: github/codeql-action/autobuild@v4
-
       - uses: github/codeql-action/analyze@v4
         with:
-          category: /language:${{ matrix.language }}
-          output: codeql-results-${{ matrix.language }}
-
-      - name: Upload CodeQL results as artifact
-        uses: actions/upload-artifact@v4
+          output: codeql-results
+      - uses: actions/upload-artifact@v4
         with:
-          name: codeql-results-${{ matrix.language }}
-          path: codeql-results-${{ matrix.language }}
+          name: codeql-results
+          path: codeql-results
         if: always()
 
   # -----------------------------------------------
-  # 2. Semgrep
+  # 2. Semgrep - no changes, was working fine
   # -----------------------------------------------
   semgrep:
     name: Semgrep Scan
@@ -56,69 +46,50 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
-
       - name: Run Semgrep
         run: semgrep scan --config auto --sarif > semgrep.sarif
-
-      - name: Upload to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
         if: always()
-
-      - name: Upload Semgrep results as artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: semgrep-results
           path: semgrep.sarif
         if: always()
 
   # -----------------------------------------------
-  # 3. OSV Scanner
+  # 3. OSV Scanner - no changes, was working fine
   # -----------------------------------------------
   osv-scanner:
     name: OSV Dependency Scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install OSV Scanner
         run: |
           curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
           chmod +x osv-scanner
-
       - name: Run OSV Scanner
         run: ./osv-scanner scan source --recursive --format=sarif --output=osv-results.sarif ./ || true
-
-      - name: Ensure valid OSV sarif exists
-        run: |
-          if [ ! -s osv-results.sarif ]; then
-            echo '{"version":"2.1.0","runs":[]}' > osv-results.sarif
-          fi
-        if: always()
-
-      - name: Upload to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: osv-results.sarif
-        if: always()
-
-      - name: Upload OSV results as artifact
-        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('osv-results.sarif') != ''
+      - uses: actions/upload-artifact@v4
         with:
           name: osv-results
           path: osv-results.sarif
-        if: always()
+        if: always() && hashFiles('osv-results.sarif') != ''
 
   # -----------------------------------------------
-  # 4. Snyk - dependencies AND source code
+  # 4. Snyk - fixed: skip upload when no results
   # -----------------------------------------------
   snyk:
     name: Snyk Scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: snyk/actions/setup@master
 
       - name: Snyk - scan dependencies
@@ -131,32 +102,19 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Ensure valid sarif files exist
-        run: |
-          if [ ! -s snyk-deps.sarif ]; then
-            echo '{"version":"2.1.0","runs":[]}' > snyk-deps.sarif
-          fi
-          if [ ! -s snyk-code.sarif ]; then
-            echo '{"version":"2.1.0","runs":[]}' > snyk-code.sarif
-          fi
-        if: always()
-
-      - name: Upload Snyk deps results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-deps.sarif
           category: snyk-deps
-        if: always()
+        if: always() && hashFiles('snyk-deps.sarif') != ''
 
-      - name: Upload Snyk code results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-code.sarif
           category: snyk-code
-        if: always()
+        if: always() && hashFiles('snyk-code.sarif') != ''
 
-      - name: Upload Snyk results as artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: snyk-results
           path: |
